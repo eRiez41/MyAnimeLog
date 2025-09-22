@@ -62,12 +62,12 @@
         <div v-if="pendingEpisodes">Loading episodes...</div>
         <div v-else-if="errorEpisodes" class="text-red-500">Failed to load episodes.</div>
         <div v-else-if="episodes && episodes.data.length > 0">
-          <ul class="space-y-2">
+          <ul class="space-y-2" v-auto-animate>
             <li v-for="episode in episodes.data" :key="episode.mal_id" class="bg-gray-50 rounded-md overflow-hidden">
               <button @click="toggleEpisode(episode.mal_id)" class="w-full text-left p-3 font-semibold text-green-700">
                 <span>Eps {{ episode.mal_id }}: {{ episode.title }}</span>
               </button>
-              <div v-if="openEpisodeId === episode.mal_id" class="px-4 pb-4 border-t pt-4 mt-2 animate-fade-in">
+              <div v-if="openEpisodeId === episode.mal_id" class="px-4 pb-4 border-t pt-4 mt-2">
                 <div v-if="loadingEpisodeDetail" class="text-gray-500">Loading details...</div>
                 <div v-else-if="episodeDetailsCache[episode.mal_id]">
                   <p v-if="episodeDetailsCache[episode.mal_id].score > 0" class="font-semibold mb-2">
@@ -92,18 +92,18 @@
 
 <script setup>
 import { ref, onMounted } from 'vue';
+import { toast } from 'vue-sonner';
 
 const route = useRoute();
 const animeId = parseInt(route.params.id, 10);
 
-// State & Fetch untuk Detail Anime Utama dan Daftar Episode
+// Fetch data utama
 const { data: anime, pending: pendingDetail, error: errorDetail } = await useFetch(`https://api.jikan.moe/v4/anime/${animeId}`);
 const { data: episodes, pending: pendingEpisodes, error: errorEpisodes } = await useFetch(`https://api.jikan.moe/v4/anime/${animeId}/episodes`);
 
-// --- Logika untuk Supabase & Watchlist ---
+// --- Logika Supabase & Watchlist ---
 const supabase = useSupabaseClient();
 const user = useSupabaseUser();
-
 const watchlistStatus = ref('Plan to Watch');
 const watchlistScore = ref(0);
 const existingWatchlistItem = ref(null);
@@ -114,17 +114,9 @@ onMounted(async () => {
     loadingWatchlistStatus.value = false;
     return;
   }
-  
   try {
-    const { data, error } = await supabase
-      .from('watchlist')
-      .select('*')
-      .eq('user_id', user.value.id)
-      .eq('anime_id', animeId)
-      .single();
-
+    const { data, error } = await supabase.from('watchlist').select('*').eq('user_id', user.value.id).eq('anime_id', animeId).single();
     if (error && error.code !== 'PGRST116') throw error;
-
     if (data) {
       existingWatchlistItem.value = data;
       watchlistStatus.value = data.status;
@@ -138,8 +130,10 @@ onMounted(async () => {
 });
 
 const handleUpsertWatchlist = async () => {
-  if (!user.value) return alert('You must be logged in.');
-
+  if (!user.value) {
+    if (process.client) toast.error('You must be logged in.');
+    return;
+  }
   const watchlistItem = {
     user_id: user.value.id,
     anime_id: animeId,
@@ -148,46 +142,52 @@ const handleUpsertWatchlist = async () => {
     status: watchlistStatus.value,
     score: watchlistScore.value,
   };
-
   try {
     const { data, error } = await supabase
       .from('watchlist')
       .upsert(watchlistItem, { onConflict: 'user_id, anime_id' })
       .select()
       .single();
-      
     if (error) throw error;
-
     existingWatchlistItem.value = data;
-    alert('Watchlist updated successfully!');
+    if (process.client) toast.success('Watchlist updated successfully!');
   } catch (error) {
-    alert('Error updating watchlist: ' + error.message);
+    if (process.client) toast.error('Error updating watchlist: ' + error.message);
   }
 };
 
-const handleRemoveFromWatchlist = async () => {
-    if (!existingWatchlistItem.value) return;
-    if (!window.confirm('Are you sure you want to remove this anime from your list?')) return;
 
-    try {
-        const { error } = await supabase
+const handleRemoveFromWatchlist = () => {
+  if (!existingWatchlistItem.value) return;
+
+  toast.warning(`Are you sure you want to remove "${anime.value.data.title}"?`, {
+    action: {
+      label: 'Yes, remove it',
+      onClick: async () => {
+        try {
+          const { error } = await supabase
             .from('watchlist')
             .delete()
             .eq('id', existingWatchlistItem.value.id);
 
-        if (error) throw error;
+          if (error) throw error;
 
-        existingWatchlistItem.value = null;
-        watchlistStatus.value = 'Plan to Watch';
-        watchlistScore.value = 0;
-        alert('Successfully removed from your watchlist.');
-    } catch (error) {
-        alert('Error removing from watchlist: ' + error.message);
+          existingWatchlistItem.value = null;
+          watchlistStatus.value = 'Plan to Watch';
+          watchlistScore.value = 0;
+          toast.success('Successfully removed from your watchlist.');
+        } catch (err) {
+          toast.error('Error removing from watchlist: ' + err.message);
+        }
+      }
+    },
+    cancel: {
+      label: 'Cancel'
     }
+  });
 };
 
-
-// --- Logika untuk Accordion Episode ---
+// --- Logika Accordion Episode ---
 const openEpisodeId = ref(null);
 const episodeDetailsCache = ref({});
 const loadingEpisodeDetail = ref(false);

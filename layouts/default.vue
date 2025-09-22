@@ -6,7 +6,7 @@
         <ul class="flex space-x-4 items-center">
           <li v-if="user"><NuxtLink to="/profile" class="hover:text-green-600">My Watchlist</NuxtLink></li>
           <li><NuxtLink to="/search" class="hover:text-green-600">Search</NuxtLink></li>
-
+          
           <li v-if="user">
             <button @click="handleLogout" class="bg-red-500 text-white text-sm font-bold py-1 px-3 rounded-md hover:bg-red-600">Logout</button>
           </li>

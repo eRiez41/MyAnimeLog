@@ -4,11 +4,11 @@
       <h1 class="text-3xl font-bold">My Watchlist</h1>
     </div>
 
-    <div class="flex space-x-2 mb-6 border-b pb-2">
+    <div class="flex flex-wrap gap-2 mb-6 border-b pb-2">
       <button 
         @click="selectedStatus = 'All'" 
-        :class="{'bg-green-600 text-white': selectedStatus === 'All', 'bg-gray-200 text-gray-700': selectedStatus !== 'All'}"
-        class="px-4 py-1 rounded-full text-sm font-semibold"
+        :class="{'bg-green-600 text-white': selectedStatus === 'All', 'bg-gray-200 text-gray-700 hover:bg-gray-300': selectedStatus !== 'All'}"
+        class="px-4 py-1 rounded-full text-sm font-semibold transition-colors"
       >
         All
       </button>
@@ -16,28 +16,37 @@
         v-for="status in statuses" 
         :key="status" 
         @click="selectedStatus = status"
-        :class="{'bg-green-600 text-white': selectedStatus === status, 'bg-gray-200 text-gray-700': selectedStatus !== status}"
-        class="px-4 py-1 rounded-full text-sm font-semibold"
+        :class="{'bg-green-600 text-white': selectedStatus === status, 'bg-gray-200 text-gray-700 hover:bg-gray-300': selectedStatus !== status}"
+        class="px-4 py-1 rounded-full text-sm font-semibold transition-colors"
       >
         {{ status }}
       </button>
     </div>
+
     <div v-if="loading" class="text-center">Loading your watchlist...</div>
     <div v-else-if="error" class="text-center text-red-500">
       Error loading watchlist: {{ error.message }}
     </div>
     
-    <div v-else-if="filteredWatchlist.length > 0" class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+    <div v-else-if="filteredWatchlist.length > 0" class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4" v-auto-animate>
       <div v-for="item in filteredWatchlist" :key="item.id">
-        <NuxtLink :to="`/anime/${item.anime_id}`" class="bg-white rounded-lg shadow text-center block hover:scale-105 transition-transform duration-200 overflow-hidden group">
-          <img :src="item.anime_image" :alt="item.anime_title" class="w-full h-72 object-cover">
+        <div class="bg-white rounded-lg shadow text-center overflow-hidden group">
+          <NuxtLink :to="`/anime/${item.anime_id}`" class="block hover:scale-105 transition-transform duration-200">
+            <img :src="item.anime_image" :alt="item.anime_title" class="w-full h-72 object-cover">
+          </NuxtLink>
           <div class="p-2">
             <h3 class="font-semibold text-sm truncate group-hover:text-green-600" :title="item.anime_title">
               {{ item.anime_title }}
             </h3>
             <p class="text-xs text-gray-500 mt-1">{{ item.status }} - ⭐ {{ item.score }}</p>
+            <button 
+              @click="handleDelete(item.id, item.anime_title)"
+              class="text-xs text-red-500 hover:underline mt-1"
+            >
+              Remove
+            </button>
           </div>
-        </NuxtLink>
+        </div>
       </div>
     </div>
 
@@ -52,8 +61,9 @@
 </template>
 
 <script setup>
-import { ref, onMounted, computed } from 'vue'; // <-- Tambahkan computed
-    
+import { ref, onMounted, computed } from 'vue';
+import { toast } from 'vue-sonner';
+
 definePageMeta({
   middleware: 'auth'
 });
@@ -65,20 +75,18 @@ const watchlist = ref([]);
 const loading = ref(true);
 const error = ref(null);
 
-// --- BAGIAN BARU: LOGIKA FILTER ---
+// Logika Filter
 const statuses = ['Watching', 'Completed', 'Plan to Watch', 'On-Hold', 'Dropped'];
 const selectedStatus = ref('All');
 
-// Ini adalah "catatan kecil" yang reaktif
 const filteredWatchlist = computed(() => {
   if (selectedStatus.value === 'All') {
-    return watchlist.value; // Jika 'All', tampilkan semua
+    return watchlist.value;
   }
-  // Jika tidak, filter daftar utama berdasarkan status yang dipilih
   return watchlist.value.filter(item => item.status === selectedStatus.value);
 });
-// ---------------------------------
 
+// Mengambil data saat halaman dibuka
 onMounted(async () => {
   try {
     const { data, error: fetchError } = await supabase
@@ -96,4 +104,31 @@ onMounted(async () => {
     loading.value = false;
   }
 });
+
+// Fungsi untuk menghapus data
+const handleDelete = (itemId, itemTitle) => {
+  toast.warning(`Are you sure you want to delete "${itemTitle}"?`, {
+    action: {
+      label: 'Yes, delete it',
+      onClick: async () => {
+        try {
+          const { error } = await supabase
+            .from('watchlist')
+            .delete()
+            .eq('id', itemId);
+
+          if (error) throw error;
+
+          watchlist.value = watchlist.value.filter(item => item.id !== itemId);
+          toast.success(`"${itemTitle}" was successfully deleted.`);
+        } catch (err) {
+          toast.error('Failed to delete item: ' + err.message);
+        }
+      }
+    },
+    cancel: {
+      label: 'Cancel'
+    }
+  });
+};
 </script>
